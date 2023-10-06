@@ -13,7 +13,7 @@ from celery.worker.request import Request
 
 import pytest
 
-from .tasks import add, cumadd
+from .tasks import add, cumadd, failed_add
 
 
 class SignalCounter:
@@ -137,6 +137,35 @@ def test_result(celery_worker: TestWorkController) -> None:
     assert result_2.get(timeout=3) == 3
 
 
+def test_failures(celery_app: Celery, celery_worker: TestWorkController) -> None:
+    """Ensure that Celery signals run for the batch task."""
+    # Configure a SignalCounter for each task signal.
+    checks = (
+        (signals.task_failure, 1),
+    )
+    signal_counters = []
+    for sig, expected_count in checks:
+        counter = SignalCounter(expected_count)
+        sig.connect(counter)
+        signal_counters.append(counter)
+
+    # The batch runs after 2 task calls.
+    result_1 = failed_add.delay(1)
+
+    # Let the worker work.
+    _wait_for_ping()
+
+    for _ in range(10):  # Try up to 10 times with a short delay between attempts
+        if result_1.state == states.FAILURE:
+            break
+        sleep(0.1)
+    else:
+        pytest.fail(f"Task state is {result_1.state}, expected {states.FAILURE}")
+
+    for counter in signal_counters:
+        counter.assert_calls()
+
+
 def test_signals(celery_app: Celery, celery_worker: TestWorkController) -> None:
     """Ensure that Celery signals run for the batch task."""
     # Configure a SignalCounter for each task signal.
@@ -151,7 +180,7 @@ def test_signals(celery_app: Celery, celery_worker: TestWorkController) -> None:
         (signals.task_retry, 0),
         (signals.task_success, 1),
         (signals.task_received, 3),
-        (signals.task_failure, 0),
+        (signals.task_failure, 1),
         (signals.task_revoked, 0),
         (signals.task_unknown, 0),
         (signals.task_rejected, 0),

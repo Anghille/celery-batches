@@ -17,7 +17,7 @@ from typing import (
 from celery_batches.trace import apply_batches_task
 
 from celery import VERSION as CELERY_VERSION
-from celery import signals
+from celery import signals, states
 from celery.app import Celery
 from celery.app.task import Task
 from celery.concurrency.base import BasePool
@@ -375,6 +375,7 @@ class Batches(Task):
             for req in acks_early:
                 req.acknowledge()
             for request in requests:
+                request.time_start = time_accepted
                 request.send_event("task-started")
 
         def on_return(result: Optional[Any]) -> None:
@@ -385,10 +386,23 @@ class Batches(Task):
                 if isinstance(result, int):
                     runtime = result
                 request.send_event("task-succeeded", result=None, runtime=runtime)
+        
+        def on_failure(self):
+            for req in acks_late:
+                req.acknowledge()
+
+                eventer = self.app.events  # Assuming self.app is the Celery app instance
+                eventer.send(
+                    'task-failed',
+                    uuid=req.task_id,
+                    exception="Error",
+                    traceback="Error",
+                )
 
         return self._pool.apply_async(
             apply_batches_task,
             (self, serializable_requests, 0, None),
             accept_callback=on_accepted,
             callback=on_return,
+            on_failure=on_failure,
         )

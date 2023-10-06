@@ -7,6 +7,18 @@ from celery.utils.log import get_task_logger
 
 logger = get_task_logger(__name__)
 
+@shared_task(base=Batches, flush_every=2, flush_interval=0.1)
+def failed_add(requests: List[SimpleRequest]) -> int:
+    """
+    Add the first argument of each task.
+
+    Marks the result of each task as the sum.
+    """
+    from celery import current_app
+    for request in requests:
+        current_app.backend.mark_as_failure(request.id, exc=Exception())
+        raise Exception()
+
 
 @shared_task(base=Batches, flush_every=2, flush_interval=0.1)
 def add(requests: List[SimpleRequest]) -> int:

@@ -12,7 +12,7 @@ from celery._state import _task_stack
 from celery.app.task import Context
 from celery.utils.log import get_logger
 from kombu.utils.uuid import uuid
-
+import logging
 if TYPE_CHECKING:
     from celery_batches import Batches, SimpleRequest
 
@@ -58,6 +58,14 @@ def apply_batches_task(
             result = None
             state = FAILURE
             logger.error("Error: %r", exc, exc_info=True)
+            signals.task_failure.send(
+                sender=task,
+                task_id=task_id,
+                state=state,
+                task=task,
+                args=args,
+                kwargs={}
+            )
         else:
             if success_receivers:
                 send_success(sender=task, result=result)
