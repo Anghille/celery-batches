@@ -313,11 +313,6 @@ class Batches(Task):
             request_dict={},
         )
 
-        with self.app.events.default_dispatcher(hostname=request.hostname) as d:
-            d.send(
-                'task-received',
-                uuid=request.id, retry=True, retry_policy=None)
-
         return super().apply(([request],), {}, *_args, **options)
 
     def _do_flush(self) -> None:
@@ -378,6 +373,8 @@ class Batches(Task):
 
         def on_accepted(pid: int, time_accepted: float) -> None:
             for req in acks_early:
+                req.send_event("task-started") 
+                req.task.backend.mark_as_started(req.id)
                 req.acknowledge()
             for request in requests:
                 request.time_start = time_accepted
