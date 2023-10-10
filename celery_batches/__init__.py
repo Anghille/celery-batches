@@ -313,6 +313,11 @@ class Batches(Task):
             request_dict={},
         )
 
+        with self.app.events.default_dispatcher(hostname=request.hostname) as d:
+            d.send(
+                'task-received',
+                uuid=request.id, retry=True, retry_policy=None)
+
         return super().apply(([request],), {}, *_args, **options)
 
     def _do_flush(self) -> None:
