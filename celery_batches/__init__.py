@@ -373,12 +373,10 @@ class Batches(Task):
 
         def on_accepted(pid: int, time_accepted: float) -> None:
             for req in acks_early:
-                req.send_event("task-started") 
-                req.task.backend.mark_as_started(req.id)
                 req.acknowledge()
             for request in requests:
                 request.time_start = time_accepted
-                request.send_event("task-started")
+                request.send_event("task-started", uuid=request.id, hostname=request.hostname, timestamp=request.time_start)
 
         def on_return(result: Optional[Any]) -> None:
             for req in acks_late:
