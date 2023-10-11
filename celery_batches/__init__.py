@@ -316,6 +316,7 @@ class Batches(Task):
             correlation_id=None,
             request_dict={},
         )
+        self._event_dispatcher.send('task-sent', uuid=request.id)
         return super().apply(([request],), {}, *_args, **options)
 
     def _do_flush(self) -> None:
@@ -346,6 +347,7 @@ class Batches(Task):
                         exc_info=True,
                     )
                     req.reject(requeue=False)
+                    self._event_dispatcher.send('task-rejected', uuid=req.id)
                     continue
 
                 if eta <= now:
@@ -379,6 +381,7 @@ class Batches(Task):
                 req.acknowledge()
             for request in requests:
                 request.time_start = time_accepted
+                self._event_dispatcher.send('task-started', uuid=request.id, hostname=request.hostname, timestamp=request.time_start)
                 request.send_event("task-started", uuid=request.id, hostname=request.hostname, timestamp=request.time_start)
 
         def on_return(result: Optional[Any]) -> None:
@@ -390,19 +393,15 @@ class Batches(Task):
                 if isinstance(result, int):
                     runtime = result
                 eventer.send("task-succeeded", uuid=request.id)
+                self._event_dispatcher.send('task-succeeded', uuid=request.id)
                 request.send_event("task-succeeded", result=None, runtime=runtime)
         
         def on_failure(self):
             for req in acks_late:
+                self._event_dispatcher.send('task-failed', uuid=req.id)
                 req.acknowledge()
 
-                eventer = self.app.events.default_dispatcher(hostname=req.hostname)
-                eventer.send(
-                    'task-failed',
-                    uuid=req.task_id,
-                    exception="Error",
-                    traceback="Error",
-                )
+                
 
         return self._pool.apply_async(
             apply_batches_task,
