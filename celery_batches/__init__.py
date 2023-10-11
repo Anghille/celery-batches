@@ -205,8 +205,7 @@ class Batches(Task):
         events = eventer and eventer.enabled
         send_event = eventer and eventer.send
         task_sends_events = events and task.send_events
-        
-        self._event_dispatcher = EventDispatcher(consumer.connection)
+        self._event_dispatcher = EventDispatcher(consumer.connection, app=app)
 
         Request = symbol_by_name(task.Request)
         # Celery 5.1 added the app argument to create_request_cls.
@@ -348,6 +347,7 @@ class Batches(Task):
                     )
                     req.reject(requeue=False)
                     self._event_dispatcher.send('task-rejected', uuid=req.id)
+                    self._event_dispatcher.close()
                     continue
 
                 if eta <= now:
@@ -383,23 +383,25 @@ class Batches(Task):
                 request.time_start = time_accepted
                 self._event_dispatcher.send('task-started', uuid=request.id, hostname=request.hostname, timestamp=request.time_start)
                 request.send_event("task-started", uuid=request.id, hostname=request.hostname, timestamp=request.time_start)
+                self._event_dispatcher.close()
 
         def on_return(result: Optional[Any]) -> None:
             for req in acks_late:
                 req.acknowledge()
             for request in requests:
-                eventer = self.app.events.default_dispatcher(hostname=req.hostname)
                 runtime = 0
                 if isinstance(result, int):
                     runtime = result
-                eventer.send("task-succeeded", uuid=request.id)
                 self._event_dispatcher.send('task-succeeded', uuid=request.id)
                 request.send_event("task-succeeded", result=None, runtime=runtime)
+                self._event_dispatcher.close()
         
         def on_failure(self):
             for req in acks_late:
-                self._event_dispatcher.send('task-failed', uuid=req.id)
                 req.acknowledge()
+                self._event_dispatcher.send('task-failed', uuid=req.id)
+                req.send_event("task-failed", result=None)
+                self._event_dispatcher.close()
 
                 
 
