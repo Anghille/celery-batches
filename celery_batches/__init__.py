@@ -382,16 +382,18 @@ class Batches(Task):
             for req in acks_late:
                 req.acknowledge()
             for request in requests:
+                eventer = self.app.events.default_dispatcher(hostname=req.hostname)
                 runtime = 0
                 if isinstance(result, int):
                     runtime = result
+                eventer.send("task-succeeded", uuid=request.id)
                 request.send_event("task-succeeded", result=None, runtime=runtime)
         
         def on_failure(self):
             for req in acks_late:
                 req.acknowledge()
 
-                eventer = self.app.events  # Assuming self.app is the Celery app instance
+                eventer = self.app.events.default_dispatcher(hostname=req.hostname)
                 eventer.send(
                     'task-failed',
                     uuid=req.task_id,
