@@ -17,7 +17,8 @@ from typing import (
 from celery_batches.trace import apply_batches_task
 
 from celery import VERSION as CELERY_VERSION
-from celery import signals, states
+from celery.events.dispatcher import EventDispatcher
+from celery import signals, states, current_app, current_task
 from celery.app import Celery
 from celery.app.task import Task
 from celery.concurrency.base import BasePool
@@ -204,6 +205,8 @@ class Batches(Task):
         events = eventer and eventer.enabled
         send_event = eventer and eventer.send
         task_sends_events = events and task.send_events
+        
+        self._event_dispatcher = EventDispatcher(consumer.connection)
 
         Request = symbol_by_name(task.Request)
         # Celery 5.1 added the app argument to create_request_cls.
@@ -259,6 +262,7 @@ class Batches(Task):
 
             signals.task_received.send(sender=consumer, request=request)
             if task_sends_events:
+                self._event_dispatcher.send('task-received', uuid=request.id)
                 send_event(
                     "task-received",
                     uuid=request.id,
@@ -312,7 +316,6 @@ class Batches(Task):
             correlation_id=None,
             request_dict={},
         )
-
         return super().apply(([request],), {}, *_args, **options)
 
     def _do_flush(self) -> None:
