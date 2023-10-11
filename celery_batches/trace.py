@@ -49,11 +49,12 @@ def apply_batches_task(
         # -*- PRE -*-
         if prerun_receivers:
             send_prerun(sender=task, task_id=task_id, task=task, args=args, kwargs={})
-
+            task._event_dispatcher.send('task-started', uuid=task_id)
         # -*- TRACE -*-
         try:
             result = task(*args)
             state = SUCCESS
+            task._event_dispatcher.send('task-succeeded', uuid=task_id, result=result)
         except Exception as exc:
             result = None
             state = FAILURE
@@ -66,9 +67,11 @@ def apply_batches_task(
                 args=args,
                 kwargs={}
             )
+            task._event_dispatcher.send('task-failed', uuid=task_id, exception=exc)
         else:
             if success_receivers:
                 send_success(sender=task, result=result)
+                task._event_dispatcher.send('task-succeeded', uuid=task_id, result=result)
     finally:
         try:
             if postrun_receivers:
@@ -84,5 +87,5 @@ def apply_batches_task(
         finally:
             pop_task()
             pop_request()
-
+            task._event_dispatcher.close()
     return result
